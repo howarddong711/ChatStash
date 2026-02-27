@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ChatStash",
+    "description": "v0.7.45 | 增强豆包推荐问题过滤 (\u2192 箭头标识), 深度清理 DOM 噪音。",
+    "version": "0.7.45",
+
+
+
+
+
+
+  "permissions": ["storage", "downloads", "tabs", "debugger"],
+  "options_page": "src/pages/options/index.html",
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "host_permissions": ["https://www.doubao.com/*", "https://chat.deepseek.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.doubao.com/chat/*", "https://chat.deepseek.com/*"],
+      "js": ["src/content/main.ts"],
+      "run_at": "document_idle"
+    }
+  ]
+}

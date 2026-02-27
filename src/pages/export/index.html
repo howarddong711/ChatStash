@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatStash Export</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.32/dist/katex.min.css" />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0b1220;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: rgba(15, 23, 42, 0.12);
+        --btn: #2563eb;
+        --user-accent: #2563eb;
+        --assistant-accent: #b45309;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: linear-gradient(135deg, #0b1220, #111827);
+        color: #fff;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 28px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: var(--card);
+        color: var(--text);
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+      }
+      header {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(135deg, #f8fafc, #ffffff);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+      }
+      header .meta {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--border);
+        background: #ffffff;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      .actions button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        background: var(--btn);
+        color: white;
+      }
+      .actions button.secondary {
+        background: #0f172a;
+      }
+      .actions .hint {
+        margin-left: auto;
+        align-self: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .content {
+        padding: 18px;
+      }
+      .error {
+        padding: 16px 18px;
+        color: #9a3412;
+        background: #fff7ed;
+        border-top: 1px solid rgba(234, 88, 12, 0.25);
+        white-space: pre-wrap;
+      }
+
+      /* ── Turn-based layout (from pre-rendered HTML) ──────────────────────── */
+      .turn {
+        margin-bottom: 20px;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border-left: 4px solid transparent;
+      }
+      .turn-user {
+        background: #f0f4ff;
+        border-left-color: var(--user-accent);
+      }
+      .turn-assistant {
+        background: #fffbf0;
+        border-left-color: var(--assistant-accent);
+      }
+      .turn-role {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 8px;
+      }
+      .turn-user .turn-role { color: var(--user-accent); }
+      .turn-assistant .turn-role { color: var(--assistant-accent); }
+      .turn-body {
+        line-height: 1.65;
+        word-break: break-word;
+      }
+      .turn-body img { max-width: 100%; }
+      .turn-body pre {
+        background: #0b1220;
+        color: #e5e7eb;
+        padding: 12px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-size: 13px;
+      }
+      .turn-body code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+      }
+      .turn-body p:not(:first-child) code:not(pre code) {
+        background: #f1f5f9;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 0.9em;
+      }
+      .turn-body table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 12px 0;
+      }
+      .turn-body th,
+      .turn-body td {
+        border: 1px solid #e2e8f0;
+        padding: 8px 10px;
+        text-align: left;
+      }
+      .turn-body th {
+        background: #f8fafc;
+        font-weight: 600;
+      }
+
+      /* ── Batch export: conversation blocks ──────────────────────────────── */
+      .conversation-block {
+        margin-bottom: 32px;
+      }
+      .conversation-title {
+        margin: 24px 0 4px;
+        font-size: 18px;
+        color: var(--text);
+      }
+      .conversation-meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 16px;
+      }
+      hr.conversation-divider {
+        border: none;
+        border-top: 2px dashed var(--border);
+        margin: 32px 0;
+      }
+
+      /* ── Markdown-rendered fallback ─────────────────────────────────────── */
+      .md h1,
+      .md h2,
+      .md h3 {
+        margin: 18px 0 10px;
+      }
+      .md pre {
+        background: #0b1220;
+        color: #e5e7eb;
+        padding: 12px;
+        border-radius: 10px;
+        overflow: auto;
+      }
+      .md code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+      }
+      .md blockquote {
+        border-left: 4px solid #e2e8f0;
+        margin: 12px 0;
+        padding: 8px 12px;
+        background: #f8fafc;
+      }
+      .md a {
+        color: #2563eb;
+      }
+      .md img {
+        max-width: 100%;
+      }
+
+      /* ── Print ──────────────────────────────────────────────────────────── */
+      @media print {
+        body {
+          background: #fff;
+          color: #000;
+        }
+        .wrap {
+          margin: 0;
+          max-width: none;
+          padding: 0;
+        }
+        .actions {
+          display: none !important;
+        }
+        .card {
+          border: 0;
+          box-shadow: none;
+          border-radius: 0;
+        }
+        header {
+          background: #fff;
+          padding: 12px 0;
+          border-bottom: 1px solid #ddd;
+        }
+        .content {
+          padding: 8px 0;
+        }
+        .turn {
+          break-inside: avoid;
+          page-break-inside: avoid;
+          padding: 10px 14px;
+          margin-bottom: 14px;
+        }
+        .turn pre {
+          white-space: pre-wrap;
+          word-break: break-all;
+        }
+        .turn-user {
+          background: #f5f7fa !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .turn-assistant {
+          background: #fefcf6 !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .conversation-block {
+          break-before: page;
+        }
+        .conversation-block:first-child {
+          break-before: auto;
+        }
+        hr.conversation-divider {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <header>
+          <h1 id="title">ChatStash Export</h1>
+          <div class="meta" id="meta"></div>
+        </header>
+        <div class="actions">
+          <button id="printBtn">打印 / 另存为 PDF</button>
+          <button id="dlMdBtn" class="secondary">下载 Markdown</button>
+          <button id="dlJsonBtn" class="secondary">下载 JSON</button>
+          <div class="hint">提示：在打印窗口选择"另存为 PDF"即可</div>
+        </div>
+        <div class="content">
+          <div id="render" class="md"></div>
+        </div>
+        <div id="error" class="error" style="display: none"></div>
+      </div>
+    </div>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>

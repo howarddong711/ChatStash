@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatStash 设置</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: #f3f4f6;
+        color: #111827;
+        min-height: 100vh;
+      }
+      .wrap { max-width: 680px; margin: 32px auto; padding: 0 16px; }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        border: 1px solid rgba(0,0,0,.1);
+        box-shadow: 0 4px 20px rgba(0,0,0,.08);
+        overflow: hidden;
+      }
+      .card-header {
+        padding: 18px 24px;
+        border-bottom: 1px solid rgba(0,0,0,.08);
+        background: linear-gradient(135deg, #f8fafc, #fff);
+      }
+      .card-header h1 { margin: 0; font-size: 17px; }
+      .card-header p { margin: 6px 0 0; font-size: 13px; color: #6b7280; }
+      .card-body { padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label { font-size: 13px; font-weight: 600; color: #374151; }
+      .field .desc { font-size: 12px; color: #6b7280; line-height: 1.5; }
+      .field input[type="text"] {
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 13px;
+        color: #111827;
+        outline: none;
+        transition: border-color .15s;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      .field input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #2563eb;
+      }
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .field input[type="text"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+      .field .example {
+        font-size: 11px;
+        color: #9ca3af;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        line-height: 1.6;
+      }
+      .section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #9ca3af;
+        margin-bottom: -8px;
+      }
+      .actions { display: flex; gap: 10px; align-items: center; }
+      .btn {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 18px;
+        font-size: 13px;
+        cursor: pointer;
+        background: #2563eb;
+        color: white;
+        font-weight: 500;
+      }
+      .btn:hover { background: #1d4ed8; }
+      .btn.secondary { background: #f3f4f6; color: #374151; }
+      .btn.secondary:hover { background: #e5e7eb; }
+      .toast {
+        font-size: 13px;
+        color: #059669;
+        display: none;
+        align-items: center;
+        gap: 5px;
+      }
+      .toast.show { display: flex; }
+      .toast.error { color: #dc2626; }
+      .divider { height: 1px; background: rgba(0,0,0,.07); margin: 0 -24px; }
+      .platform-info {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .platform-card {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .platform-card h3 { margin: 0 0 4px; font-size: 13px; }
+      .platform-card p { margin: 0; font-size: 11px; color: #6b7280; line-height: 1.5; }
+      .platform-card code { background: #e5e7eb; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="card-header">
+          <h1>⚙️ ChatStash 设置</h1>
+          <p>配置导出路径和行为偏好</p>
+        </div>
+        <div class="card-body">
+
+          <p class="section-title">下载路径设置</p>
+
+          <div class="field">
+            <label for="rootDir">默认保存根目录</label>
+            <div class="desc">
+              设置后，导出文件将自动按以下结构保存，无需每次手动选择目录：<br>
+              <strong>根目录 / 平台名 / 用户名 / 文件名.扩展名</strong>
+            </div>
+            <input type="text" id="rootDir" placeholder="例如：D:/ChatExports 或 C:/Users/你的名字/Documents/ChatStash" />
+            <div class="example" id="pathPreview">
+              示例路径将在输入后显示…
+            </div>
+            <div class="desc" style="color:#f59e0b">
+              ⚠️ 留空时，每次导出都会弹出浏览器"另存为"对话框，让你手动选择保存位置。
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <p class="section-title">调试设置</p>
+
+          <div class="field">
+            <label for="enableDebugLogs">导出调试日志</label>
+            <div class="checkbox-row">
+              <input type="checkbox" id="enableDebugLogs" />
+              <span class="desc" style="margin:0">启用后记录导出过程日志，可在导出面板中手动导出日志文件。</span>
+            </div>
+            <div class="desc">默认关闭，减少普通用户使用负担。</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <p class="section-title">支持的平台</p>
+
+          <div class="platform-info">
+            <div class="platform-card">
+              <h3>🟡 豆包（Doubao）</h3>
+              <p>
+                保存路径：<code>根目录/doubao/用户名/...</code><br>
+                自动识别登录用户名（头像、昵称）。<br>
+                可从侧边栏列表批量选择对话。
+              </p>
+            </div>
+            <div class="platform-card">
+              <h3>🔵 DeepSeek</h3>
+              <p>
+                保存路径：<code>根目录/deepseek/用户名/...</code><br>
+                自动识别登录用户名。<br>
+                可从侧边栏列表批量选择对话。
+              </p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="saveBtn">保存设置</button>
+            <button class="btn secondary" id="clearBtn">清除路径（恢复弹窗模式）</button>
+            <span class="toast" id="toast"></span>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>
