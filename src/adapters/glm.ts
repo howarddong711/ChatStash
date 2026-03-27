@@ -21,6 +21,17 @@ const GLM_FOOTER_START_REGEX =
 const GLM_USERNAME_LINE_REGEX = /^(?:用户[_\\-]?[A-Za-z0-9]+|user[_\\-]?[A-Za-z0-9]+)$/i;
 const GLM_TOOLBAR_LINE_REGEX = /^(?:ChatGLM.*语音|语音|梦幻杰)$/u;
 const GLM_PAGE_COUNTER_REGEX = /^\d+\/\d+$/;
+const GLM_BRAND_NOISE_REGEX = /^(?:来自[:：]\s*智谱清言|来自[:：]\s*chatglm|智谱清言|chatglm|言)$/iu;
+const GLM_EMPTY_STATE_MARKERS = [
+  '最新旗舰模型上线',
+  '和我聊聊天吧',
+  '研究模式',
+  'PPT模式',
+  '数据分析',
+  '更多',
+  '新对话',
+  'Agent',
+] as const;
 
 function isGlmConversationUrl(url: URL): boolean {
   return GLM_HOSTS.has(url.hostname) && /^\/main\/alltoolsdetail\/?$/i.test(url.pathname);
@@ -32,6 +43,32 @@ function normalizeTitle(text: string): string {
 
 function normalizeText(text: string): string {
   return text.replace(/\r/g, '').replace(/\u00a0/g, ' ').replace(/\s+\n/g, '\n').trim();
+}
+
+function countGlmEmptyStateMarkers(text: string): number {
+  const normalized = normalizeTitle(text);
+  if (!normalized) return 0;
+
+  let count = 0;
+  for (const marker of GLM_EMPTY_STATE_MARKERS) {
+    if (normalized.includes(marker)) count++;
+  }
+  return count;
+}
+
+function isGlmEmptyStateText(text: string): boolean {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  return countGlmEmptyStateMarkers(normalized) >= 3;
+}
+
+function isGlmGarbageText(text: string): boolean {
+  const normalized = normalizeText(text);
+  if (!normalized) return true;
+  if (isGlmEmptyStateText(normalized)) return true;
+  if (GLM_BRAND_NOISE_REGEX.test(normalized)) return true;
+  return false;
 }
 
 function delay(ms: number): Promise<void> {
@@ -389,6 +426,7 @@ function cleanGlmBlockText(text: string): string {
 
 function cleanGlmTurnContent(content: string, role: 'user' | 'assistant'): string {
   if (!content) return '';
+  if (isGlmGarbageText(content)) return '';
 
   const lines = content.split('\n');
   const cleaned: string[] = [];
@@ -425,7 +463,8 @@ function cleanGlmTurnContent(content: string, role: 'user' | 'assistant'): strin
     cleaned.push(rawLine);
   }
 
-  return cleaned.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const result = cleaned.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return isGlmGarbageText(result) ? '' : result;
 }
 
 function sanitizeExtractedTurns(turns: ChatTurn[]): ChatTurn[] {
@@ -443,7 +482,11 @@ function sanitizeExtractedTurns(turns: ChatTurn[]): ChatTurn[] {
         contentHtml: cleanedHtml,
       };
     })
-    .filter((turn) => normalizeText(turn.contentMd || turn.contentText || '').length > 0);
+    .filter((turn) => {
+      const content = normalizeText(turn.contentMd || turn.contentText || '');
+      if (!content) return false;
+      return !isGlmGarbageText(content);
+    });
 }
 
 function looksLikeUserPrompt(text: string): boolean {
@@ -518,6 +561,7 @@ function buildFallbackTurns(): ChatTurn[] {
     const md = cleanGlmBlockMarkdown(converted.md || converted.text || '');
     const text = cleanGlmBlockText(converted.text || converted.md || '');
     if ((text || md).length < 20) continue;
+    if (isGlmEmptyStateText(text || md)) continue;
     if (isGlmUiNoiseText(text || md)) continue;
 
     const sig = normalizeText(text || md).slice(0, 240);
@@ -553,7 +597,6 @@ function buildFallbackTurns(): ChatTurn[] {
     .trim();
 
   const turns: ChatTurn[] = [];
-  const title = pickTitle();
 
   if (userBlock && (userBlock.md || userBlock.text)) {
     turns.push({
@@ -561,13 +604,6 @@ function buildFallbackTurns(): ChatTurn[] {
       contentMd: userBlock.md || userBlock.text,
       contentText: userBlock.text || userBlock.md,
       contentHtml: userBlock.html,
-    });
-  } else if (title && !GLM_GENERIC_TITLE_REGEX.test(title)) {
-    turns.push({
-      role: 'user',
-      contentMd: title,
-      contentText: title,
-      contentHtml: title,
     });
   }
 
@@ -607,10 +643,10 @@ export const glmAdapter: SiteAdapter = {
       if (fallbackTurns.length > 0) turns = fallbackTurns;
     }
 
-    if (turns.length < 1) {
+    if (!hasUsefulTurns(turns)) {
       return {
         ok: false,
-        reason: '未能识别到足够的消息节点（可能是页面结构更新、未进入具体会话，或内容尚未加载完成）。',
+        reason: '未能识别到足够的有效会话内容（可能是页面结构更新、未进入具体会话，或内容尚未加载完成）。',
         debug: {
           counts: summarizeDebugCounts(),
           url: location.href,

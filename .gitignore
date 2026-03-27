@@ -20,4 +20,5 @@ dist-*
 .env
 .env.*
 coverage
-
+log/
+result/

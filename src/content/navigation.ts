@@ -9,6 +9,17 @@ const CONTENT_SELECTORS =
   '.ds-markdown, .ds-message, [class*="user-message"], [class*="assistant-message"], ' +
   '#chat-container, .chat-box, [class*="message-item"], [class*="MessageItem"], [class*="segment"], ' +
   '[class*="markdown" i], [class*="conversation" i], [class*="bubble" i], article, [role="listitem"]';
+const GLM_EMPTY_STATE_MARKERS = [
+  '最新旗舰模型上线',
+  '和我聊聊天吧',
+  '研究模式',
+  'PPT模式',
+  '数据分析',
+  '更多',
+  '新对话',
+  'Agent',
+] as const;
+const GLM_BRAND_NOISE_REGEX = /^(?:来自[:：]\s*智谱清言|来自[:：]\s*chatglm|智谱清言|chatglm|言)$/iu;
 
 export function extractChatId(url: string): string {
   try {
@@ -17,8 +28,13 @@ export function extractChatId(url: string): string {
       const cid = parsed.searchParams.get('cid')?.trim();
       if (cid) return `cid:${cid}`;
 
+      const title = parsed.searchParams.get('chatstash_title')?.trim();
+      if (title) return `title:${title}`;
+
       const t = parsed.searchParams.get('t')?.trim();
       if (t) return `glm-t:${t}`;
+
+      return 'glm-root';
     }
 
     const path = parsed.pathname;
@@ -55,6 +71,53 @@ function normalizeTitle(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function isGlmEmptyStateText(text: string): boolean {
+  const normalized = normalizeTitle(text);
+  if (!normalized) return false;
+
+  let count = 0;
+  for (const marker of GLM_EMPTY_STATE_MARKERS) {
+    if (normalized.includes(marker)) count++;
+  }
+
+  return count >= 3;
+}
+
+function isGlmGarbageText(text: string): boolean {
+  const normalized = normalizeTitle(text);
+  if (!normalized) return true;
+  if (isGlmEmptyStateText(normalized)) return true;
+  if (GLM_BRAND_NOISE_REGEX.test(normalized)) return true;
+  return false;
+}
+
+function hasGlmMeaningfulContent(): boolean {
+  const root = document.querySelector('main') || document.body || document.documentElement;
+  if (!root) return false;
+
+  const rootText = normalizeTitle((root as HTMLElement).innerText || root.textContent || '');
+  if (!rootText || isGlmGarbageText(rootText)) return false;
+
+  const nodes = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      '[data-message-author-role], [data-role="user"], [data-role="assistant"], ' +
+        '[class*="message-item" i], [class*="MessageItem" i], [class*="conversation-item" i], ' +
+        '[class*="ConversationItem" i], [class*="bubble" i], [class*="markdown" i], article, [role="listitem"]',
+    ),
+  ).filter((el) => !el.closest('#chatstash-root, nav, aside, footer, #aside-history-list'));
+
+  let meaningfulCount = 0;
+  for (const node of nodes) {
+    const text = normalizeTitle(node.innerText || node.textContent || '');
+    if (text.length < 12) continue;
+    if (isGlmGarbageText(text)) continue;
+    meaningfulCount++;
+    if (meaningfulCount >= 2) return true;
+  }
+
+  return rootText.length >= 120;
+}
+
 function getSelectedGlmSidebarTitle(): string | null {
   const selectedTitle = document.querySelector<HTMLElement>(
     '#aside-history-list .history-item.selected .title',
@@ -67,6 +130,7 @@ export function waitForConversationContent(expectedUrl: string, timeout = 4000):
   return new Promise<void>((resolve) => {
     const expectedId = extractChatId(expectedUrl);
     const expectedGlmTitle = extractGlmTitle(expectedUrl);
+    const isGlmTarget = expectedId.startsWith('cid:') || !!expectedGlmTitle;
     let resolved = false;
     let matchedAt = 0;
     const minStableMs = 280;
@@ -87,7 +151,9 @@ export function waitForConversationContent(expectedUrl: string, timeout = 4000):
         !!selectedGlmTitle &&
         normalizeTitle(expectedGlmTitle) === normalizeTitle(selectedGlmTitle);
       const urlMatches = glmTitleMatches || (currentId !== '' && currentId === expectedId);
-      const hasContent = !!document.querySelector(CONTENT_SELECTORS);
+      const hasContent = isGlmTarget
+        ? hasGlmMeaningfulContent()
+        : !!document.querySelector(CONTENT_SELECTORS);
       if (!urlMatches || !hasContent) {
         matchedAt = 0;
         return;
@@ -114,7 +180,7 @@ async function extractWithRetry(adapter: SiteAdapter, expectedUrl: string): Prom
 
   const shouldRetry =
     (adapter.id === 'deepseek' || adapter.id === 'glm') &&
-    /未能识别到足够的消息节点/.test(first.reason);
+    /未能识别到足够的(?:消息节点|有效会话内容)/.test(first.reason);
   if (!shouldRetry) return first;
 
   await waitForConversationContent(expectedUrl, adapter.id === 'glm' ? 7000 : 6000);
@@ -128,13 +194,10 @@ async function extractWithRetry(adapter: SiteAdapter, expectedUrl: string): Prom
 }
 
 function clickSidebarLink(targetUrl: string): 'already' | 'clicked' | 'not_found' {
-  const targetId = extractChatId(targetUrl);
-  if (!targetId) return 'not_found';
-
-  if (extractChatId(location.href) === targetId) return 'already';
-
   const glmCid = extractGlmCid(targetUrl);
   if (glmCid) {
+    if (extractChatId(location.href) === `cid:${glmCid}`) return 'already';
+
     const glmCandidates = Array.from(
       document.querySelectorAll<HTMLElement>(
         `a[href*="${glmCid}"], [data-cid="${glmCid}"], [data-conversation-id="${glmCid}"], [data-session-id="${glmCid}"], [data-id="${glmCid}"]`,
@@ -157,6 +220,11 @@ function clickSidebarLink(targetUrl: string): 'already' | 'clicked' | 'not_found
   const glmTitle = extractGlmTitle(targetUrl);
   if (glmTitle) {
     const normalizedTarget = normalizeTitle(glmTitle);
+    const selectedGlmTitle = getSelectedGlmSidebarTitle();
+    if (selectedGlmTitle && normalizeTitle(selectedGlmTitle) === normalizedTarget) {
+      return 'already';
+    }
+
     const historyItems = Array.from(
       document.querySelectorAll<HTMLElement>('#aside-history-list .list .history-item'),
     );
@@ -173,6 +241,11 @@ function clickSidebarLink(targetUrl: string): 'already' | 'clicked' | 'not_found
       return 'clicked';
     }
   }
+
+  const targetId = extractChatId(targetUrl);
+  if (!targetId) return 'not_found';
+
+  if (extractChatId(location.href) === targetId) return 'already';
 
   const allAnchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
   const match = allAnchors.find((anchor) => {

@@ -18,6 +18,11 @@ function extractChatId(url: string): string {
     if (parsed.hostname === 'chatglm.cn' && /^\/main\/alltoolsdetail\/?$/i.test(parsed.pathname)) {
       const cid = parsed.searchParams.get('cid')?.trim();
       if (cid) return `cid:${cid}`;
+
+      const title = parsed.searchParams.get('chatstash_title')?.trim();
+      if (title) return `title:${title}`;
+
+      return 'glm-root';
     }
 
     const path = parsed.pathname;
