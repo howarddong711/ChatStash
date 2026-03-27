@@ -62,7 +62,7 @@ function hideInputArea(): void {
     elements.forEach((el) => {
       el.style.display = 'none';
       // Also try to hide the immediate parent if it's an input container
-      const parent = el.closest('[class*="input" i], [class*="send" i], [role="region"]');
+      const parent = el.closest<HTMLElement>('[class*="input" i], [class*="send" i], [role="region"]');
       if (parent && parent !== el && parent !== el.parentElement) {
         parent.style.display = 'none';
       }
@@ -325,7 +325,7 @@ export const doubaoAdapter: SiteAdapter = {
     return detectDoubaoUsername();
   },
 
-  listConversations(): ConversationSummary[] {
+  async listConversations(): Promise<ConversationSummary[]> {
     return listDoubaoConversations();
   },
 

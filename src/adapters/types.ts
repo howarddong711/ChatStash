@@ -1,6 +1,6 @@
 import type { ChatTurn, Conversation, ConversationSummary } from '@/shared/types';
 
-export type AdapterId = 'doubao' | 'deepseek' | 'unknown';
+export type AdapterId = 'doubao' | 'deepseek' | 'kimi' | 'glm' | 'unknown';
 
 export type ExtractResult =
   | { ok: true; conversation: Conversation; turns: ChatTurn[] }
@@ -18,7 +18,7 @@ export interface SiteAdapter {
    * List all conversations accessible from the current page (sidebar list).
    * Returns an empty array if the sidebar is not detectable.
    */
-  listConversations(): ConversationSummary[];
+  listConversations(): Promise<ConversationSummary[]>;
   /**
    * Attempt to detect the currently logged-in user's display name.
    * Returns null when not detectable.

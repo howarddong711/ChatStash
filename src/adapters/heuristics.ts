@@ -172,6 +172,7 @@ turndown.addRule('katex', {
 
 
 const THOUGHT_REGEX = /^(Thought(?:ing)?|Thinking)\s+for\s+\d+(?:\.\d+)?\s*seconds\.?|思考(?:了|中)?\s*\d+(?:\.\d+)?\s*秒[。\.!！]?$/i;
+const OCR_HINT_REGEX = /^(当前模型仅对图片中的文字进行识别|切换\s*K1\.5\s*获取更好的视觉理解能力)/iu;
 
 const KNOWN_LANGS = new Set([
   'bash', 'sh', 'shell', 'zsh', 'pwsh', 'powershell', 'ps1', 'cmd', 'bat',
@@ -300,7 +301,8 @@ export function cloneAndClean(el: Element): Element {
     if (
       /^(聊聊新话题|再写一个|重新生成|分享|复制|运行|收藏|踩|赞|点赞|点踩|Chat about new topics|Regenerate|Share|Copy|Run|Feedback|Like|Dislike|Stop|停止|清空|重新开始)$/i.test(
         text,
-      ) || (text.length < 120 && /[?？]\s*(?:→|›)?\s*$/.test(text)) // Catch suggested questions with arrows
+      ) || OCR_HINT_REGEX.test(text)
+      || (text.length < 120 && /[?？]\s*(?:→|›)?\s*$/.test(text)) // Catch suggested questions with arrows
     ) {
       el.remove();
       return;
@@ -339,6 +341,9 @@ function postprocessMarkdown(md: string): string {
     }
     // Drop Thought lines
     if (THOUGHT_REGEX.test(cur.trim())) {
+      continue;
+    }
+    if (OCR_HINT_REGEX.test(cur.trim())) {
       continue;
     }
 

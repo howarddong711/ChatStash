@@ -1,24 +1,30 @@
 {
   "manifest_version": 3,
   "name": "ChatStash",
-    "description": "v0.7.45 | 增强豆包推荐问题过滤 (\u2192 箭头标识), 深度清理 DOM 噪音。",
-    "version": "0.7.45",
-
-
-
-
-
-
+  "description": "v0.7.61 | 为 GLM 已抽取的消息 turn 增加统一内容净化，继续过滤页头工具条、页码和页脚标记。",
+  "version": "0.7.62",
   "permissions": ["storage", "downloads", "tabs", "debugger"],
   "options_page": "src/pages/options/index.html",
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
   },
-  "host_permissions": ["https://www.doubao.com/*", "https://chat.deepseek.com/*"],
+  "host_permissions": [
+    "https://www.doubao.com/*",
+    "https://chat.deepseek.com/*",
+    "https://www.kimi.com/*",
+    "https://kimi.moonshot.cn/*",
+    "https://chatglm.cn/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://www.doubao.com/chat/*", "https://chat.deepseek.com/*"],
+      "matches": [
+        "https://www.doubao.com/chat/*",
+        "https://chat.deepseek.com/*",
+        "https://www.kimi.com/*",
+        "https://kimi.moonshot.cn/*",
+        "https://chatglm.cn/main/*"
+      ],
       "js": ["src/content/main.ts"],
       "run_at": "document_idle"
     }

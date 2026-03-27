@@ -415,7 +415,7 @@ export const deepseekAdapter: SiteAdapter = {
     return detectDeepSeekUsernameFromDom();
   },
 
-  listConversations(): ConversationSummary[] {
+  async listConversations(): Promise<ConversationSummary[]> {
     return listDeepSeekConversations();
   },
 

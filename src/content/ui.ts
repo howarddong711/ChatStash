@@ -3,13 +3,9 @@ import type { ConversationSummary } from '@/shared/types';
 export type ExportChoice = 'markdown' | 'json' | 'pdf';
 
 export type UIHandlers = {
-  /** Called when the user clicks an export button with the selected conversations. */
   onExport(choice: ExportChoice, selected: ConversationSummary[]): void;
-  /** Called to load the conversation list from the adapter. */
-  onLoadConversations(): ConversationSummary[];
-  /** Called when user manually exports debug logs. */
+  onLoadConversations(): Promise<ConversationSummary[]>;
   onExportLogs(): void;
-  /** Open extension options page. */
   onOpenSettings(): void;
 };
 
@@ -18,7 +14,13 @@ const ROOT_ID = 'chatstash-root';
 
 function extractChatId(url: string): string {
   try {
-    const path = new URL(url).pathname;
+    const parsed = new URL(url);
+    if (parsed.hostname === 'chatglm.cn' && /^\/main\/alltoolsdetail\/?$/i.test(parsed.pathname)) {
+      const cid = parsed.searchParams.get('cid')?.trim();
+      if (cid) return `cid:${cid}`;
+    }
+
+    const path = parsed.pathname;
     const m = path.match(/\/chat\/(?:s\/)?([^/]+)\/?$/);
     return m ? m[1] : '';
   } catch {
@@ -26,7 +28,54 @@ function extractChatId(url: string): string {
   }
 }
 
+function extractGlmTitle(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'chatglm.cn') return null;
+    if (!/^\/main\/alltoolsdetail\/?$/i.test(parsed.pathname)) return null;
+    return parsed.searchParams.get('chatstash_title')?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTitle(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function isGlmSyntheticConversationUrl(url: string): boolean {
+  return !!extractGlmTitle(url);
+}
+
+function getConversationDisplayTitle(conv: ConversationSummary): string {
+  const directTitle = normalizeTitle(conv.title || '');
+  if (directTitle) return directTitle;
+
+  const glmTitle = extractGlmTitle(conv.url);
+  if (glmTitle) return normalizeTitle(glmTitle);
+
+  if (conv.id.startsWith('title:')) {
+    return normalizeTitle(conv.id.slice('title:'.length));
+  }
+
+  return normalizeTitle(conv.id);
+}
+
+function getSelectedGlmSidebarTitle(): string | null {
+  const selectedTitle = document.querySelector<HTMLElement>(
+    '#aside-history-list .history-item.selected .title',
+  );
+  const text = normalizeTitle(selectedTitle?.innerText || selectedTitle?.textContent || '');
+  return text || null;
+}
+
 function isCurrentConversation(conv: ConversationSummary): boolean {
+  const convGlmTitle = extractGlmTitle(conv.url);
+  const selectedGlmTitle = getSelectedGlmSidebarTitle();
+  if (convGlmTitle && selectedGlmTitle) {
+    return normalizeTitle(convGlmTitle) === normalizeTitle(selectedGlmTitle);
+  }
+
   const currentId = extractChatId(location.href);
   const convId = extractChatId(conv.url) || conv.id;
   return !!currentId && !!convId && currentId === convId;
@@ -43,6 +92,7 @@ function ensureStyle(): void {
     .cs-panel{margin-top:10px;width:320px;background:#fff;color:#111;border:1px solid rgba(0,0,0,.12);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);overflow:hidden}
     .cs-panel header{padding:10px 14px;font-weight:600;background:linear-gradient(135deg,#f3f4f6,#fff);display:flex;align-items:center;justify-content:space-between}
     .cs-panel header span{font-size:13px}
+    .cs-panel .cs-count{font-size:11px;color:#6b7280;font-weight:500}
     .cs-panel .cs-toolbar{padding:8px 12px;border-bottom:1px solid rgba(0,0,0,.07);display:flex;gap:6px;align-items:center}
     .cs-panel .cs-toolbar button{background:#f3f4f6;border:0;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:#374151}
     .cs-panel .cs-toolbar button:hover{background:#e5e7eb}
@@ -52,6 +102,7 @@ function ensureStyle(): void {
     .cs-panel .cs-item:hover{background:#f9fafb}
     .cs-panel .cs-item input[type=checkbox]{margin-top:2px;flex-shrink:0;accent-color:#2563eb;width:14px;height:14px;cursor:pointer}
     .cs-panel .cs-item-text{font-size:12px;line-height:1.4;word-break:break-word;flex:1}
+    .cs-panel .cs-item-title{font-size:12px;line-height:1.45;color:#111827 !important;font-weight:600;display:block;white-space:normal;word-break:break-word}
     .cs-panel .cs-item-url{font-size:10px;color:#9ca3af;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cs-panel .cs-footer{padding:10px 12px;border-top:1px solid rgba(0,0,0,.08);display:flex;flex-direction:column;gap:8px}
     .cs-panel .cs-hint{font-size:11px;color:#6b7280;line-height:1.4}
@@ -65,7 +116,7 @@ function ensureStyle(): void {
     .cs-error{padding:10px 14px;border-top:1px solid rgba(0,0,0,.08);background:#fff7ed;color:#9a3412;font-size:12px;white-space:pre-wrap}
     .cs-status{padding:8px 14px;font-size:12px;color:#2563eb;text-align:center;border-top:1px solid rgba(0,0,0,.06)}
   `;
-  document.documentElement.appendChild(style);
+  (document.head || document.documentElement).appendChild(style);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
@@ -88,21 +139,18 @@ export function mountUI(handlers: UIHandlers): UIControls {
   const root = el('div');
   root.id = ROOT_ID;
 
-  // ── Main toggle button ───────────────────────────────────────────────────
   const mainBtn = el('button', 'cs-btn');
   mainBtn.textContent = 'ChatStash 导出';
 
-  // ── Panel ────────────────────────────────────────────────────────────────
   const panel = el('div', 'cs-panel');
   panel.style.display = 'none';
 
-  // Header
   const headerEl = el('header');
   const headerTitle = el('span');
   headerTitle.textContent = '选择要导出的对话';
-  headerEl.appendChild(headerTitle);
+  const headerCount = el('span', 'cs-count');
+  headerEl.append(headerTitle, headerCount);
 
-  // Toolbar: select-all / deselect-all / refresh
   const toolbar = el('div', 'cs-toolbar');
   const selectAllBtn = el('button');
   selectAllBtn.textContent = '全选';
@@ -116,10 +164,8 @@ export function mountUI(handlers: UIHandlers): UIControls {
   currentPageBtn.textContent = '仅当前页';
   toolbar.append(selectAllBtn, deselectAllBtn, currentPageBtn, refreshBtn, settingsBtn);
 
-  // Conversation list
   const listEl = el('div', 'cs-list');
 
-  // Footer
   const footerEl = el('div', 'cs-footer');
   const hint = el('div', 'cs-hint');
   hint.textContent = '支持导出 Markdown / JSON / PDF（自动命名并直接下载）';
@@ -140,7 +186,6 @@ export function mountUI(handlers: UIHandlers): UIControls {
 
   footerEl.append(hint, row1, row2);
 
-  // Error + status
   const errorEl = el('div', 'cs-error');
   errorEl.style.display = 'none';
   const statusEl = el('div', 'cs-status');
@@ -148,7 +193,6 @@ export function mountUI(handlers: UIHandlers): UIControls {
 
   panel.append(headerEl, toolbar, listEl, footerEl, statusEl, errorEl);
 
-  // ── State ────────────────────────────────────────────────────────────────
   let conversations: ConversationSummary[] = [];
   const checkboxes = new Map<string, HTMLInputElement>();
 
@@ -161,13 +205,13 @@ export function mountUI(handlers: UIHandlers): UIControls {
     const disabled = count === 0;
     mdBtn.disabled = disabled;
     jsonBtn.disabled = disabled;
-    // PDF button always enabled (uses current page)
   }
 
   function renderList(items: ConversationSummary[]): void {
     listEl.innerHTML = '';
     checkboxes.clear();
     conversations = items;
+    headerCount.textContent = items.length > 0 ? `已读取 ${items.length} 个` : '';
 
     if (items.length === 0) {
       const empty = el('div', 'cs-list-empty');
@@ -182,19 +226,23 @@ export function mountUI(handlers: UIHandlers): UIControls {
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
-      cb.checked = isCurrentConversation(conv); // default: current conversation only
+      cb.checked = isCurrentConversation(conv);
       cb.addEventListener('change', updateButtonStates);
       checkboxes.set(conv.id, cb);
 
       const textWrap = el('div', 'cs-item-text');
-      textWrap.textContent = conv.title || conv.id;
+      const titleLine = el('div', 'cs-item-title');
+      const displayTitle = getConversationDisplayTitle(conv);
+      titleLine.textContent = displayTitle || conv.url;
 
       const urlLine = el('div', 'cs-item-url');
       urlLine.textContent = conv.url;
+      if (isGlmSyntheticConversationUrl(conv.url)) {
+        urlLine.style.display = 'none';
+      }
 
-      textWrap.appendChild(urlLine);
+      textWrap.append(titleLine, urlLine);
       item.append(cb, textWrap);
-      // Clicking the row also toggles the checkbox
       item.addEventListener('click', (e) => {
         if (e.target !== cb) {
           cb.checked = !cb.checked;
@@ -207,51 +255,65 @@ export function mountUI(handlers: UIHandlers): UIControls {
     updateButtonStates();
   }
 
-  function loadConversations(): void {
-    const items = handlers.onLoadConversations();
-    renderList(items);
+  async function loadConversations(): Promise<void> {
+    listEl.innerHTML = '';
+    headerCount.textContent = '';
+    const empty = el('div', 'cs-list-empty');
+    empty.textContent = '正在读取会话列表…';
+    listEl.appendChild(empty);
+
+    try {
+      const items = await handlers.onLoadConversations();
+      renderList(items);
+    } catch {
+      renderList([]);
+    }
   }
 
-  // ── Toolbar actions ──────────────────────────────────────────────────────
   selectAllBtn.onclick = () => {
-    checkboxes.forEach((cb) => { cb.checked = true; });
+    checkboxes.forEach((cb) => {
+      cb.checked = true;
+    });
     updateButtonStates();
   };
+
   deselectAllBtn.onclick = () => {
-    checkboxes.forEach((cb) => { cb.checked = false; });
+    checkboxes.forEach((cb) => {
+      cb.checked = false;
+    });
     updateButtonStates();
   };
+
   refreshBtn.onclick = () => {
-    loadConversations();
+    void loadConversations();
   };
+
   settingsBtn.onclick = () => {
     handlers.onOpenSettings();
   };
+
   currentPageBtn.onclick = () => {
-    // Mark only the conversation matching the current URL
     checkboxes.forEach((cb, id) => {
       const conv = conversations.find((c) => c.id === id);
-      const isCurrent = conv ? location.href.includes(conv.id) : false;
+      const isCurrent = conv ? isCurrentConversation(conv) : false;
       cb.checked = isCurrent;
     });
     updateButtonStates();
   };
 
-  // ── Export buttons ───────────────────────────────────────────────────────
   mdBtn.onclick = () => handlers.onExport('markdown', getSelected());
   jsonBtn.onclick = () => handlers.onExport('json', getSelected());
   pdfBtn.onclick = () => handlers.onExport('pdf', getSelected());
   logsBtn.onclick = () => handlers.onExportLogs();
 
-  // ── Toggle panel ─────────────────────────────────────────────────────────
   mainBtn.onclick = () => {
     const isOpen = panel.style.display !== 'none';
     panel.style.display = isOpen ? 'none' : 'block';
-    if (!isOpen) loadConversations();
+    if (!isOpen) void loadConversations();
   };
 
   root.append(mainBtn, panel);
-  document.documentElement.appendChild(root);
+  (document.body || document.documentElement).appendChild(root);
 
   return {
     setError(message: string | null) {

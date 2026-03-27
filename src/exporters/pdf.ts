@@ -98,9 +98,13 @@ async function getEmbeddedFonts(pdfDoc: PDFDocument): Promise<RenderContext['fon
     try { boldFontCache = await loadFontBytes(notoSansScBoldUrl); } catch { boldFontCache = null; }
   }
   const cjk = await pdfDoc.embedFont(regularFontCache, { subset: true });
-  const bold = boldFontCache ? await pdfDoc.embedFont(boldFontCache, { subset: true }) : await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const bold = boldFontCache ? await pdfDoc.embedFont(boldFontCache, { subset: true }) : cjk;
   const mono = await pdfDoc.embedFont(StandardFonts.Courier);
   return { cjk, bold, mono };
+}
+
+function pickCodeFont(text: string, ctx: RenderContext): PDFFont {
+  return /[^\x00-\x7F]/.test(text) ? ctx.fonts.cjk : ctx.fonts.mono;
 }
 
 // ── Layout Engine ────────────────────────────────────────────────────────────
@@ -143,7 +147,7 @@ function extractInline(tokens: any[] | undefined, style: Style, ctx: RenderConte
   if (!tokens) return out;
   for (const t of tokens) {
     if (t.type === 'strong') out.push(...extractInline(t.tokens, { ...style, font: ctx.fonts.bold }, ctx));
-    else if (t.type === 'codespan') out.push({ text: t.text, font: ctx.fonts.mono, size: style.size - 1, color: rgb(0.6, 0.2, 0.3), bg: rgb(0.96, 0.96, 0.96) });
+    else if (t.type === 'codespan') out.push({ text: t.text, font: pickCodeFont(t.text, ctx), size: style.size - 1, color: rgb(0.6, 0.2, 0.3), bg: rgb(0.96, 0.96, 0.96) });
     else if (t.type === 'link') out.push(...extractInline(t.tokens, { ...style, color: rgb(0.05, 0.35, 0.75) }, ctx));
     else if (t.type === 'text' || t.type === 'escape') out.push({ text: t.text, ...style });
     else if (t.type === 'space') out.push({ text: ' ', ...style });
@@ -221,7 +225,7 @@ function renderBlocks(blocks: any[], ctx: RenderContext, left: number) {
         ctx.page.drawText(lines[i], {
           x: left + 12,
           y: ctx.page.getHeight() - ctx.cursor.top - lh + 2,
-          font: ctx.fonts.mono,
+          font: pickCodeFont(lines[i], ctx),
           size,
           color: rgb(0.2, 0.2, 0.2)
         });
